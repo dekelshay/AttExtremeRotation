@@ -8,6 +8,8 @@ from trainers.utils.loss_utils import *
 from evaluation.evaluation_metrics import *
 # from Transformers.transformers_vit import VisionTransformer
 from Transformers.transformer import  TransformerModel
+from torch.nn import TransformerDecoder, TransformerDecoderLayer
+
 # from positional_encodings import PositionalEncoding1D, PositionalEncoding2D
 import math
 # from coral_pytorch.dataset import corn_label_from_logits
@@ -82,6 +84,23 @@ class Trainer(BaseTrainer):
             self.pos_encoder1 = self.positionalencoding2d(self.cfg.models.encoder.num_out_layers, 32,32).to('cuda')
             self.pos_encoder2 = self.positionalencoding2d(self.cfg.models.encoder.num_out_layers, 32, 32).to('cuda')
             #self.transformer_vit_model = VisionTransformer()
+
+            # Hyperparameters
+            num_decoder_layers = 2
+            d_model = 128  # Embedding dimension
+            nhead = 2  # Number of attention heads
+            dim_feedforward = 512
+            dropout = 0.1
+            # Transformer Decoder Layer
+            decoder_layer0 = TransformerDecoderLayer(d_model, nhead, dim_feedforward, dropout)
+            decoder_layer1 = TransformerDecoderLayer(d_model, nhead, dim_feedforward, dropout)
+            decoder_layer2 = TransformerDecoderLayer(d_model, nhead, dim_feedforward, dropout)
+            # Transformer Decoder
+            transformer_decoder0 = TransformerDecoder(decoder_layer0, num_decoder_layers)
+            transformer_decoder1 = TransformerDecoder(decoder_layer1, num_decoder_layers)
+            transformer_decoder2 = TransformerDecoder(decoder_layer2, num_decoder_layers)
+
+            self.q = nn.Parameter(torch.randn(1, 4))  # This is the learnable parameter
 
     def positionalencoding2d(self, d_model, height, width):
         """
@@ -163,22 +182,38 @@ class Trainer(BaseTrainer):
 
             image_feature_map1 = image_feature_map1.view((image_feature_map1.shape[0], image_feature_map1.shape[1],image_feature_map1.shape[2] * image_feature_map1.shape[3]))
             image_feature_map2 = image_feature_map2.view((image_feature_map2.shape[0], image_feature_map2.shape[1],image_feature_map2.shape[2] * image_feature_map2.shape[3]))
-            pairwise_feature = torch.cat([image_feature_map1, image_feature_map2], dim=2)
+
+            # Use feature_map1 as input to decoder0 and feature_map2 as query
+            output1 = transformer_decoder0(image_feature_map2, image_feature_map1)
+
+            # Use feature_map2 as input to decoder0 and feature_map1 as query
+            output2 = transformer_decoder0(image_feature_map1, image_feature_map2)
+
+
+            pairwise_feature = torch.cat([output1, output2], dim=2)
             # pairwise_feature = pairwise_feature.view( pairwise_feature.shape[2], pairwise_feature.shape[0], pairwise_feature.shape[1])
             pairwise_feature = pairwise_feature.view( pairwise_feature.shape[0], pairwise_feature.shape[2], pairwise_feature.shape[1])
 
             ### TRANSFORMER UPDATE
 
-            trans_output = self.transformer(pairwise_feature )
+            trans_output = self.transformer( pairwise_feature )
+
+            ## Distilering
+            # Use q as input to decoder1 and trans_output as query
+            output1_dis = transformer_decoder1(trans_output, self.q)
+
+            # Use output1 as input to decoder1 and self.q as query
+            output2_dis = transformer_decoder2(self.q, output1_dis)
+
 
             # trans_output = trans_output[:,:1024,:]
-            trans_output = trans_output[:, :self.cfg.transformer.seq_len, :]
-            trans_output = trans_output.view(trans_output.shape[0], self.enc_size, self.enc_size, trans_output.shape[2])
-            trans_output = trans_output.view(trans_output.shape[0], trans_output.shape[3], trans_output.shape[1], trans_output.shape[2] )
+            # trans_output = trans_output[:, :self.cfg.transformer.seq_len, :]
+            # trans_output = trans_output.view(trans_output.shape[0], self.enc_size, self.enc_size, trans_output.shape[2])
+            # trans_output = trans_output.view(trans_output.shape[0], trans_output.shape[3], trans_output.shape[1], trans_output.shape[2] )
 
-            _, out_rotation_x = self.rotation_net(trans_output)
-            _, out_rotation_y = self.rotation_net_y(trans_output)
-            _, out_rotation_z = self.rotation_net_z(trans_output)
+            # _, out_rotation_x = self.rotation_net(trans_output)
+            # _, out_rotation_y = self.rotation_net_y(trans_output)
+            # _, out_rotation_z = self.rotation_net_z(trans_output)
 
 
 
@@ -188,7 +223,7 @@ class Trainer(BaseTrainer):
         # loss type
         if not self.classification:
             # regression loss
-            out_rmat, out_rotation = self.rotation_net(pairwise_feature)
+            out_rmat, out_rotation = self.rotation_net(output2_dis)
             res1 = rotation_loss_reg(out_rmat, gt_rmat)
             loss = res1['loss']
         else:
@@ -294,21 +329,44 @@ class Trainer(BaseTrainer):
                                                                   image_feature_map2.shape[2] *
                                                                   image_feature_map2.shape[3]))
 
-                    pairwise_feature = torch.cat([image_feature_map1, image_feature_map2], dim=2)
-                    pairwise_feature = pairwise_feature.view(pairwise_feature.shape[0], pairwise_feature.shape[2],pairwise_feature.shape[1])
+                    # Use feature_map1 as input to decoder0 and feature_map2 as query
+                    output1 = transformer_decoder0(image_feature_map2, image_feature_map1)
+
+                    # Use feature_map2 as input to decoder0 and feature_map1 as query
+                    output2 = transformer_decoder0(image_feature_map1, image_feature_map2)
+
+                    pairwise_feature = torch.cat([output1, output2], dim=2)
+                    # pairwise_feature = pairwise_feature.view( pairwise_feature.shape[2], pairwise_feature.shape[0], pairwise_feature.shape[1])
+                    pairwise_feature = pairwise_feature.view(pairwise_feature.shape[0], pairwise_feature.shape[2],
+                                                             pairwise_feature.shape[1])
+
+                    ### TRANSFORMER UPDATE
+
                     trans_output = self.transformer(pairwise_feature)
 
-                    trans_output = trans_output[:, :1024, :]
-                    trans_output = trans_output.view(trans_output.shape[0], 32, 32, trans_output.shape[2])
-                    trans_output = trans_output.view(trans_output.shape[0], trans_output.shape[3],
-                                                     trans_output.shape[1], trans_output.shape[2])
+                    ## Distilering
+                    # Use q as input to decoder1 and trans_output as query
+                    output1_dis = transformer_decoder1(trans_output, self.q)
 
-                    _, out_rotation_x = self.rotation_net(trans_output)
-                    _, out_rotation_y = self.rotation_net_y(trans_output)
-                    _, out_rotation_z = self.rotation_net_z(trans_output)
+                    # Use output1 as input to decoder1 and self.q as query
+                    output2_dis = transformer_decoder2(self.q, output1_dis)
+
+                    #####
+                    # pairwise_feature = torch.cat([image_feature_map1, image_feature_map2], dim=2)
+                    # pairwise_feature = pairwise_feature.view(pairwise_feature.shape[0], pairwise_feature.shape[2],pairwise_feature.shape[1])
+                    # trans_output = self.transformer(pairwise_feature)
+                    #
+                    # trans_output = trans_output[:, :1024, :]
+                    # trans_output = trans_output.view(trans_output.shape[0], 32, 32, trans_output.shape[2])
+                    # trans_output = trans_output.view(trans_output.shape[0], trans_output.shape[3],
+                    #                                  trans_output.shape[1], trans_output.shape[2])
+
+                    # _, out_rotation_x = self.rotation_net(trans_output)
+                    # _, out_rotation_y = self.rotation_net_y(trans_output)
+                    # _, out_rotation_z = self.rotation_net_z(trans_output)
 
                 if not self.classification:
-                    out_rmat, _ = self.rotation_net(pairwise_feature)
+                    out_rmat, _ = self.rotation_net(output2_dis)
                     out_rmat1 = None
                 else:
                     # _, out_rotation_x = self.rotation_net(pairwise_feature)
