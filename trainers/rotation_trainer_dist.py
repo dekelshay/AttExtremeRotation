@@ -15,6 +15,21 @@ import math
 # from coral_pytorch.dataset import corn_label_from_logits
 
 
+class TwoLayerFC(nn.Module):
+    def __init__(self, input_dim, hidden_dim, output_dim):
+        super(TwoLayerFC, self).__init__()
+        # Fully connected layers
+        self.fc1 = nn.Linear(input_dim, hidden_dim)  # First fully connected layer
+        self.fc2 = nn.Linear(hidden_dim, output_dim) # Second fully connected layer
+
+    def forward(self, x):
+        # First FC layer with activation
+        x = F.relu(self.fc1(x))
+        # Second FC layer with activation
+        x = F.relu(self.fc2(x))
+        return x
+
+
 class Trainer(BaseTrainer):
     def __init__(self, cfg, args):
         self.cfg = cfg
@@ -101,6 +116,10 @@ class Trainer(BaseTrainer):
             transformer_decoder2 = TransformerDecoder(decoder_layer2, num_decoder_layers)
 
             self.q = nn.Parameter(torch.randn(1, 4))  # This is the learnable parameter
+
+            # Create an instance of the TwoLayerFC model
+            TwoLayerFC_model = TwoLayerFC(4, 16, 4)
+
 
     def positionalencoding2d(self, d_model, height, width):
         """
@@ -223,7 +242,8 @@ class Trainer(BaseTrainer):
         # loss type
         if not self.classification:
             # regression loss
-            out_rmat, out_rotation = self.rotation_net(output2_dis)
+            out_q = TwoLayerFC_model(output2_dis)
+            out_r_mat = compute_rotation_matrix_from_quaternion(out_q)
             res1 = rotation_loss_reg(out_rmat, gt_rmat)
             loss = res1['loss']
         else:
@@ -366,7 +386,9 @@ class Trainer(BaseTrainer):
                     # _, out_rotation_z = self.rotation_net_z(trans_output)
 
                 if not self.classification:
-                    out_rmat, _ = self.rotation_net(output2_dis)
+                    out_q = TwoLayerFC_model(output2_dis)
+                    out_rmat = compute_rotation_matrix_from_quaternion(out_q)
+                    #out_rmat, _ = self.rotation_net(output2_dis)
                     out_rmat1 = None
                 else:
                     # _, out_rotation_x = self.rotation_net(pairwise_feature)
