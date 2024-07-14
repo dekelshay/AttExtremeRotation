@@ -7,11 +7,13 @@ from trainers.base_trainer import BaseTrainer
 from trainers.utils.loss_utils import *
 from evaluation.evaluation_metrics import *
 # from Transformers.transformers_vit import VisionTransformer
-from Transformers.transformer import  TransformerModel
+from Transformers.transformer import TransformerModel
 from torch.nn import TransformerDecoder, TransformerDecoderLayer
 
 # from positional_encodings import PositionalEncoding1D, PositionalEncoding2D
 import math
+
+
 # from coral_pytorch.dataset import corn_label_from_logits
 
 
@@ -19,11 +21,12 @@ class TwoLayerFC(nn.Module):
     def __init__(self, input_dim, hidden_dim, output_dim):
         super(TwoLayerFC, self).__init__()
         # Fully connected layers
-        self.fc1 = nn.Linear(input_dim, hidden_dim)  # First fully connected layer
-        self.fc2 = nn.Linear(hidden_dim, output_dim) # Second fully connected layer
+        self.fc1 = nn.Linear(256*1024, hidden_dim)  # First fully connected layer
+        self.fc2 = nn.Linear(hidden_dim, output_dim)  # Second fully connected layer
 
     def forward(self, x):
         # First FC layer with activation
+        x = x.view(x.size(0), -1)
         x = F.relu(self.fc1(x))
         # Second FC layer with activation
         x = F.relu(self.fc2(x))
@@ -92,13 +95,21 @@ class Trainer(BaseTrainer):
 
         ### TRANSFOREMR INITALIZE
         if self.pairwise_type == "transformer":
-            self.transformer = TransformerModel(d_model= self.cfg.models.encoder.num_out_layers, nhead = self.cfg.transformer.nhead ,
-                                                d_hid = self.cfg.transformer.d_hid , nlayers= self.cfg.transformer.nlayers, seq_len = self.cfg.transformer.seq_len, dropout= self.cfg.transformer.dropout)
-            self.enc_size = int(np.sqrt(self.cfg.transformer.seq_len))
+            self.transformer = TransformerModel(d_model=1024,
+                                                nhead=self.cfg.transformer.nhead,
+                                                d_hid=self.cfg.transformer.d_hid, nlayers=self.cfg.transformer.nlayers,
+                                                seq_len=self.cfg.transformer.seq_len,
+                                                dropout=self.cfg.transformer.dropout)
+            # self.transformer = TransformerModel(d_model=self.cfg.models.encoder.num_out_layers,
+            #                                     nhead=self.cfg.transformer.nhead,
+            #                                     d_hid=self.cfg.transformer.d_hid, nlayers=self.cfg.transformer.nlayers,
+            #                                     seq_len=self.cfg.transformer.seq_len,
+            #                                     dropout=self.cfg.transformer.dropout)
+            # self.enc_size = int(np.sqrt(self.cfg.transformer.seq_len))
             # ADD 2D positional encoding
-            self.pos_encoder1 = self.positionalencoding2d(self.cfg.models.encoder.num_out_layers, 32,32).to('cuda')
+            self.pos_encoder1 = self.positionalencoding2d(self.cfg.models.encoder.num_out_layers, 32, 32).to('cuda')
             self.pos_encoder2 = self.positionalencoding2d(self.cfg.models.encoder.num_out_layers, 32, 32).to('cuda')
-            #self.transformer_vit_model = VisionTransformer()
+            # self.transformer_vit_model = VisionTransformer()
 
             # Hyperparameters
             num_decoder_layers = 2
@@ -108,18 +119,17 @@ class Trainer(BaseTrainer):
             dropout = 0.1
             # Transformer Decoder Layer
             decoder_layer0 = TransformerDecoderLayer(d_model, nhead, dim_feedforward, dropout)
-            decoder_layer1 = TransformerDecoderLayer(d_model, nhead, dim_feedforward, dropout)
-            decoder_layer2 = TransformerDecoderLayer(d_model, nhead, dim_feedforward, dropout)
+            decoder_layer1 = TransformerDecoderLayer(1024, nhead, dim_feedforward, dropout)
+            decoder_layer2 = TransformerDecoderLayer(1024, nhead, dim_feedforward, dropout)
             # Transformer Decoder
-            transformer_decoder0 = TransformerDecoder(decoder_layer0, num_decoder_layers)
-            transformer_decoder1 = TransformerDecoder(decoder_layer1, num_decoder_layers)
-            transformer_decoder2 = TransformerDecoder(decoder_layer2, num_decoder_layers)
+            self.transformer_decoder0 = TransformerDecoder(decoder_layer0, num_decoder_layers).cuda()
+            self.transformer_decoder1 = TransformerDecoder(decoder_layer1, num_decoder_layers).cuda()
+            self.transformer_decoder2 = TransformerDecoder(decoder_layer2, num_decoder_layers).cuda()
 
-            self.q = nn.Parameter(torch.randn(1, 4))  # This is the learnable parameter
+            self.q = nn.Parameter(torch.randn(self.cfg.data.train.batch_size, 256,1024)).cuda()
 
             # Create an instance of the TwoLayerFC model
-            TwoLayerFC_model = TwoLayerFC(4, 16, 4)
-
+            self.TwoLayerFC_model = TwoLayerFC(256, 16, 4).cuda()
 
     def positionalencoding2d(self, d_model, height, width):
         """
@@ -172,7 +182,7 @@ class Trainer(BaseTrainer):
             self.opt_enc.zero_grad()
             self.opt_dn.zero_grad()
             if self.pairwise_type == "transformer":
-                self.transformer.train() ## SHAY ADDING
+                self.transformer.train()  ## SHAY ADDING
 
         batch_size = img1.size(0)
         gt_rmat = compute_gt_rmat(rotation_x1, rotation_y1, rotation_x2, rotation_y2, batch_size)
@@ -199,31 +209,32 @@ class Trainer(BaseTrainer):
             image_feature_map1 = image_feature_map1 + self.pos_encoder1
             image_feature_map2 = image_feature_map2 + self.pos_encoder2
 
-            image_feature_map1 = image_feature_map1.view((image_feature_map1.shape[0], image_feature_map1.shape[1],image_feature_map1.shape[2] * image_feature_map1.shape[3]))
-            image_feature_map2 = image_feature_map2.view((image_feature_map2.shape[0], image_feature_map2.shape[1],image_feature_map2.shape[2] * image_feature_map2.shape[3]))
+            image_feature_map1 = image_feature_map1.view((image_feature_map1.shape[0],image_feature_map1.shape[2] * image_feature_map1.shape[3]
+                                                          ,image_feature_map1.shape[1]))
+            image_feature_map2 = image_feature_map2.view((image_feature_map2.shape[0], image_feature_map2.shape[2] * image_feature_map2.shape[3],
+                                                          image_feature_map2.shape[1]))
 
             # Use feature_map1 as input to decoder0 and feature_map2 as query
-            output1 = transformer_decoder0(image_feature_map2, image_feature_map1)
+            output1 = self.transformer_decoder0(image_feature_map2, image_feature_map1)
 
             # Use feature_map2 as input to decoder0 and feature_map1 as query
-            output2 = transformer_decoder0(image_feature_map1, image_feature_map2)
-
+            output2 = self.transformer_decoder0(image_feature_map1, image_feature_map2)
 
             pairwise_feature = torch.cat([output1, output2], dim=2)
             # pairwise_feature = pairwise_feature.view( pairwise_feature.shape[2], pairwise_feature.shape[0], pairwise_feature.shape[1])
-            pairwise_feature = pairwise_feature.view( pairwise_feature.shape[0], pairwise_feature.shape[2], pairwise_feature.shape[1])
+            pairwise_feature = pairwise_feature.view(pairwise_feature.shape[0], pairwise_feature.shape[2],
+                                                     pairwise_feature.shape[1])
 
             ### TRANSFORMER UPDATE
 
-            trans_output = self.transformer( pairwise_feature )
+            trans_output = self.transformer(pairwise_feature)
 
             ## Distilering
             # Use q as input to decoder1 and trans_output as query
-            output1_dis = transformer_decoder1(trans_output, self.q)
+            output1_dis = self.transformer_decoder1(trans_output, self.q)
 
             # Use output1 as input to decoder1 and self.q as query
-            output2_dis = transformer_decoder2(self.q, output1_dis)
-
+            output2_dis = self.transformer_decoder2(self.q, output1_dis)
 
             # trans_output = trans_output[:,:1024,:]
             # trans_output = trans_output[:, :self.cfg.transformer.seq_len, :]
@@ -242,9 +253,9 @@ class Trainer(BaseTrainer):
         # loss type
         if not self.classification:
             # regression loss
-            out_q = TwoLayerFC_model(output2_dis)
+            out_q = self.TwoLayerFC_model(output2_dis)
             out_r_mat = compute_rotation_matrix_from_quaternion(out_q)
-            res1 = rotation_loss_reg(out_rmat, gt_rmat)
+            res1 = rotation_loss_reg(out_r_mat, gt_rmat)
             loss = res1['loss']
         else:
 
@@ -260,7 +271,6 @@ class Trainer(BaseTrainer):
 
             loss = loss_x + loss_y + loss_z
             res1 = {"loss": loss, "loss_x": loss_x, "loss_y": loss_y, "loss_z": loss_z}
-
 
         if not no_update:
             loss.backward()
@@ -300,7 +310,7 @@ class Trainer(BaseTrainer):
             self.rotation_net_y.eval()
             self.rotation_net_z.eval()
             if self.pairwise_type == "transformer":
-                self.transformer.eval() ## SHAY ADD
+                self.transformer.eval()  ## SHAY ADD
 
             for data_full in tqdm.tqdm(test_loader):
                 img1 = data_full['img1'].cuda()
@@ -388,17 +398,19 @@ class Trainer(BaseTrainer):
                 if not self.classification:
                     out_q = TwoLayerFC_model(output2_dis)
                     out_rmat = compute_rotation_matrix_from_quaternion(out_q)
-                    #out_rmat, _ = self.rotation_net(output2_dis)
+                    # out_rmat, _ = self.rotation_net(output2_dis)
                     out_rmat1 = None
                 else:
                     # _, out_rotation_x = self.rotation_net(pairwise_feature)
                     # _, out_rotation_y = self.rotation_net_y(pairwise_feature)
                     # _, out_rotation_z = self.rotation_net_z(pairwise_feature)
                     if self.rotation_parameterization:
-                        out_rmat, out_rmat1 = compute_out_rmat(out_rotation_x, out_rotation_y, out_rotation_z, batch_size)
-                    else:                        
-                        out_rmat, out_rmat1 = compute_out_rmat_from_euler(out_rotation_x, out_rotation_y, out_rotation_z, batch_size)
-                
+                        out_rmat, out_rmat1 = compute_out_rmat(out_rotation_x, out_rotation_y, out_rotation_z,
+                                                               batch_size)
+                    else:
+                        out_rmat, out_rmat1 = compute_out_rmat_from_euler(out_rotation_x, out_rotation_y,
+                                                                          out_rotation_z, batch_size)
+
                 if gt_rmat_array is None:
                     gt_rmat_array = gt_rmat
                 else:
@@ -408,7 +420,8 @@ class Trainer(BaseTrainer):
                 else:
                     out_rmat_array = torch.cat((out_rmat_array, out_rmat))
                 if val_angle:
-                    gt_rmat1 = compute_rotation_matrix_from_viewpoint(rotation_x1, rotation_y1, batch_size).view(batch_size, 3, 3).cuda()
+                    gt_rmat1 = compute_rotation_matrix_from_viewpoint(rotation_x1, rotation_y1, batch_size).view(
+                        batch_size, 3, 3).cuda()
                     if gt_rmat1_array is None:
                         gt_rmat1_array = gt_rmat1
                     else:
@@ -420,7 +433,8 @@ class Trainer(BaseTrainer):
 
             res_error = evaluation_metric_rotation(out_rmat_array, gt_rmat_array)
             if val_angle:
-                angle_error = evaluation_metric_rotation_angle(out_rmat_array, gt_rmat_array, gt_rmat1_array, out_rmat1_array)
+                angle_error = evaluation_metric_rotation_angle(out_rmat_array, gt_rmat_array, gt_rmat1_array,
+                                                               out_rmat1_array)
                 res_error.update(angle_error)
 
             # mean, median, max, std, 10deg
@@ -466,11 +480,11 @@ class Trainer(BaseTrainer):
         }
         if appendix is not None:
             d.update(appendix)
-        #save_name = "epoch_%s_iters_%s.pt" % (epoch, step)
+        # save_name = "epoch_%s_iters_%s.pt" % (epoch, step)
         save_name = "epoch_%s.pt" % (epoch)
         path = os.path.join(self.cfg.save_dir, "checkpoints", save_name)
         torch.save(d, path)
-        remove_name = "epoch_%s.pt" % (epoch-1)
+        remove_name = "epoch_%s.pt" % (epoch - 1)
         remove_path = os.path.join(self.cfg.save_dir, "checkpoints", remove_name)
         if os.path.exists(remove_path):
             os.remove(remove_path)
