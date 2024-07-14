@@ -1,0 +1,102 @@
+data:
+  type: datasets.pairwise_dataloader
+  num_workers: 10
+  height: 128
+  train:
+    batch_size: 20
+    path: /home/radarnet1/Data/StreetView/jpegs_manhattan_2021_pers
+    pairs_file_her: /home/radarnet1/Data/StreetView/metadata/train_pair_rotation_NEW_np.npy
+    pairs_file: /home/radarnet1/Data/StreetView/image_df_final_test.csv
+    pairs_file_BACKUP: /home/radarnet1/Data/StreetView/train_small_med_concat_14_02.csv
+    pairs_file_: /home/radarnet1/Data/StreetView/final_data_set_08_01_22_small_train.csv
+    pairs_file_good_: /home/radarnet1/Data/StreetView/image_df_final_train.csv
+    pairs_file_large_: /home/radarnet1/Data/StreetView/final_data_set_08_01_22_med_train.csv
+  val:
+    batch_size: 20
+    path: /home/radarnet1/Data/StreetView/jpegs_manhattan_2021_pers
+    pairs_file_her:  /home/radarnet1/Data/StreetView/metadata/test_pair_rotation_NEW_np.npy
+    pairs_file: /home/radarnet1/Data/StreetView/image_df_final_test.csv
+    pairs_file_BACKUP: /home/radarnet1/Data/StreetView/test_small_med_concat_21_02.csv
+    pairs_file_: /home/radarnet1/Data/StreetView/final_data_set_08_01_22_small_test.csv
+    pairs_file_good_: /home/radarnet1/Data/StreetView/image_df_final_test.csv
+    pairs_file_large_: /home/radarnet1/Data/StreetView/final_data_set_08_01_22_med_test.csv
+viz:
+  log_freq: 10
+  viz_freq: 75000
+  save_freq: 30000
+  val_freq: 10000
+
+# validation options
+val:
+  run_val_during_training: True
+  save_val_results: False
+  eval_classification: False
+  eval_sampling: False
+  batch_size: 100
+
+trainer:
+  type: trainers.rotation_trainer_dist
+  epochs: 20
+  seed: 100
+  pairwise_type: 'transformer'
+  pairwise_type_cnn: 'cost_volume'
+  classification: False
+  opt:
+    type: 'adam'
+    lr: 5e-4  #  use default learning rate  (4e-4)
+    beta1: 0.9
+    beta2: 0.999
+    momentum: 0.9  # for SGD
+    weight_decay: 0.
+    scheduler: 'linear'
+    step_epoch: 10
+
+models:
+  encoder:
+    type: models.encoder.resunet_encoder
+    block: 1 # 0 basic, 1 bottleneck
+    num_blocks: 3-3-3
+    not_concat: True
+    num_out_layers: 128
+
+  rotationnet:
+    type: models.rotationnet.rotation_cv_net
+    block: 1 # 0 basic, 1 bottleneck
+    num_blocks: 1-1
+    zdim: 512
+    in_planes: 128
+    in_planes_old: 1024
+    width: 32
+    height: 32
+    out_rotation_mode_old: 'distribution'
+    out_rotation_mode: 'Quaternion'
+  rotationnet_y:
+    type: models.rotationnet.rotation_cv_net
+    block: 1 # 0 basic, 1 bottleneck
+    num_blocks: 1-1
+    zdim: 512
+    in_planes: 128
+    in_planes_old: 1024
+    width: 32
+    height: 32
+    out_rotation_mode_old: 'distribution'
+    out_rotation_mode: 'Quaternion'
+  rotationnet_z:
+    type: models.rotationnet.rotation_cv_net
+    block: 1 # 0 basic, 1 bottleneck
+    num_blocks: 1-1
+    zdim: 512
+    in_planes: 128
+    in_planes_old: 1024
+    width: 32
+    height: 32
+    out_rotation_mode_old: 'distribution'
+    out_rotation_mode: 'Quaternion'
+
+transformer:
+  nhead: 2
+  d_hid: 768
+  nlayers: 2
+  dropout: 0.1
+  seq_len: 1024
+
