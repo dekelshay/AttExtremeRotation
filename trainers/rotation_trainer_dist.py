@@ -351,19 +351,19 @@ class Trainer(BaseTrainer):
                     image_feature_map2 = image_feature_map2 + self.pos_encoder2
 
                     image_feature_map1 = image_feature_map1.view((image_feature_map1.shape[0],
-                                                                  image_feature_map1.shape[1],
-                                                                  image_feature_map1.shape[2] *
-                                                                  image_feature_map1.shape[3]))
+                                                                  image_feature_map1.shape[2]*
+                                                                  image_feature_map1.shape[3],
+                                                                  image_feature_map1.shape[1]))
                     image_feature_map2 = image_feature_map2.view((image_feature_map2.shape[0],
-                                                                  image_feature_map2.shape[1],
-                                                                  image_feature_map2.shape[2] *
-                                                                  image_feature_map2.shape[3]))
+                                                                  image_feature_map2.shape[2]*
+                                                                  image_feature_map2.shape[3],
+                                                                  image_feature_map2.shape[1]))
 
                     # Use feature_map1 as input to decoder0 and feature_map2 as query
-                    output1 = transformer_decoder0(image_feature_map2, image_feature_map1)
+                    output1 = self.transformer_decoder0(image_feature_map2, image_feature_map1)
 
                     # Use feature_map2 as input to decoder0 and feature_map1 as query
-                    output2 = transformer_decoder0(image_feature_map1, image_feature_map2)
+                    output2 = self.transformer_decoder0(image_feature_map1, image_feature_map2)
 
                     pairwise_feature = torch.cat([output1, output2], dim=2)
                     # pairwise_feature = pairwise_feature.view( pairwise_feature.shape[2], pairwise_feature.shape[0], pairwise_feature.shape[1])
@@ -376,10 +376,10 @@ class Trainer(BaseTrainer):
 
                     ## Distilering
                     # Use q as input to decoder1 and trans_output as query
-                    output1_dis = transformer_decoder1(trans_output, self.q)
+                    output1_dis = self.transformer_decoder1(trans_output, self.q)
 
                     # Use output1 as input to decoder1 and self.q as query
-                    output2_dis = transformer_decoder2(self.q, output1_dis)
+                    output2_dis = self.transformer_decoder2(self.q, output1_dis)
 
                     #####
                     # pairwise_feature = torch.cat([image_feature_map1, image_feature_map2], dim=2)
@@ -396,7 +396,7 @@ class Trainer(BaseTrainer):
                     # _, out_rotation_z = self.rotation_net_z(trans_output)
 
                 if not self.classification:
-                    out_q = TwoLayerFC_model(output2_dis)
+                    out_q = self.TwoLayerFC_model(output2_dis)
                     out_rmat = compute_rotation_matrix_from_quaternion(out_q)
                     # out_rmat, _ = self.rotation_net(output2_dis)
                     out_rmat1 = None
