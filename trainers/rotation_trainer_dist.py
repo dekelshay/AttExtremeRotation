@@ -126,7 +126,7 @@ class Trainer(BaseTrainer):
             self.transformer_decoder1 = TransformerDecoder(decoder_layer1, num_decoder_layers).cuda()
             self.transformer_decoder2 = TransformerDecoder(decoder_layer2, num_decoder_layers).cuda()
 
-            self.q = nn.Parameter(torch.randn(self.cfg.data.train.batch_size, 256,1024)).cuda()
+            self.q = torch.randn(self.cfg.data.train.batch_size, 1,4).cuda()
 
             # Create an instance of the TwoLayerFC model
             self.TwoLayerFC_model = TwoLayerFC(256, 16, 4).cuda()
@@ -231,6 +231,7 @@ class Trainer(BaseTrainer):
 
             ## Distilering
             # Use q as input to decoder1 and trans_output as query
+            self.q = nn.functional.pad(self.q , (trans_output.shape[2]-self.q.shape[2], 0, 0, trans_output.shape[1]-self.q.shape[1], 0, 0))
             output1_dis = self.transformer_decoder1(trans_output, self.q)
 
             # Use output1 as input to decoder1 and self.q as query
@@ -376,6 +377,8 @@ class Trainer(BaseTrainer):
 
                     ## Distilering
                     # Use q as input to decoder1 and trans_output as query
+                    self.q = nn.functional.pad(self.q, (trans_output.shape[2] - self.q.shape[2], 0, 0, trans_output.shape[1] - self.q.shape[1], 0, 0))
+
                     output1_dis = self.transformer_decoder1(trans_output, self.q)
 
                     # Use output1 as input to decoder1 and self.q as query
