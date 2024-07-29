@@ -95,7 +95,7 @@ class Trainer(BaseTrainer):
 
         ### TRANSFOREMR INITALIZE
         if self.pairwise_type == "transformer":
-            self.transformer = TransformerModel(d_model=1024,
+            self.transformer = TransformerModel(d_model=128,
                                                 nhead=self.cfg.transformer.nhead,
                                                 d_hid=self.cfg.transformer.d_hid, nlayers=self.cfg.transformer.nlayers,
                                                 seq_len=self.cfg.transformer.seq_len,
@@ -119,8 +119,8 @@ class Trainer(BaseTrainer):
             dropout = 0.1
             # Transformer Decoder Layer
             decoder_layer0 = TransformerDecoderLayer(d_model, nhead, dim_feedforward, dropout)
-            decoder_layer1 = TransformerDecoderLayer(1024, nhead, dim_feedforward, dropout)
-            decoder_layer2 = TransformerDecoderLayer(1024, nhead, dim_feedforward, dropout)
+            decoder_layer1 = TransformerDecoderLayer(128, nhead, dim_feedforward, dropout)
+            decoder_layer2 = TransformerDecoderLayer(128, nhead, dim_feedforward, dropout)
             # Transformer Decoder
             self.transformer_decoder0 = TransformerDecoder(decoder_layer0, num_decoder_layers).cuda()
             self.transformer_decoder1 = TransformerDecoder(decoder_layer1, num_decoder_layers).cuda()
@@ -220,10 +220,10 @@ class Trainer(BaseTrainer):
             # Use feature_map2 as input to decoder0 and feature_map1 as query
             output2 = self.transformer_decoder0(image_feature_map1, image_feature_map2)
 
-            pairwise_feature = torch.cat([output1, output2], dim=2)
+            pairwise_feature = torch.cat([output1, output2], dim=1)
             # pairwise_feature = pairwise_feature.view( pairwise_feature.shape[2], pairwise_feature.shape[0], pairwise_feature.shape[1])
-            pairwise_feature = pairwise_feature.view(pairwise_feature.shape[0], pairwise_feature.shape[2],
-                                                     pairwise_feature.shape[1])
+            # pairwise_feature = pairwise_feature.view(pairwise_feature.shape[0], pairwise_feature.shape[2],
+            #                                          pairwise_feature.shape[1])
 
             ### TRANSFORMER UPDATE
 
@@ -366,10 +366,10 @@ class Trainer(BaseTrainer):
                     # Use feature_map2 as input to decoder0 and feature_map1 as query
                     output2 = self.transformer_decoder0(image_feature_map1, image_feature_map2)
 
-                    pairwise_feature = torch.cat([output1, output2], dim=2)
+                    pairwise_feature = torch.cat([output1, output2], dim=1)
                     # pairwise_feature = pairwise_feature.view( pairwise_feature.shape[2], pairwise_feature.shape[0], pairwise_feature.shape[1])
-                    pairwise_feature = pairwise_feature.view(pairwise_feature.shape[0], pairwise_feature.shape[2],
-                                                             pairwise_feature.shape[1])
+                    # pairwise_feature = pairwise_feature.view(pairwise_feature.shape[0], pairwise_feature.shape[2],
+                    #                                          pairwise_feature.shape[1])
 
                     ### TRANSFORMER UPDATE
 
