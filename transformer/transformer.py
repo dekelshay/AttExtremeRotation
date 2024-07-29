@@ -22,11 +22,11 @@ class TransformerModel(nn.Module):
         encoder_layers = TransformerEncoderLayer(d_model, nhead, d_hid, dropout, batch_first = True ) # encoder_layers = TransformerEncoderLayer(d_model+1, nhead, d_hid, dropout)
         self.transformer_encoder = TransformerEncoder(encoder_layers, nlayers).to(self.device )
         self.d_model = d_model
-        #self.mask = torch.zeros((2048, 2048), requires_grad=False).to('cuda')
+        self.mask = torch.zeros((2048, 2048), requires_grad=False).to('cuda')
         #self.mask = torch.zeros((2*seq_len, 2*seq_len) )
-        self.mask = torch.zeros((256, 256))
-        #self.mask[0:seq_len, 0:seq_len] = float('-inf')
-        #self.mask[seq_len:2*seq_len, seq_len:2*seq_len] = float('-inf')
+        # self.mask = torch.zeros((256, 256))
+        self.mask[0:1024, 0:1024] = float('-inf')
+        self.mask[1024:2*1024, 1024:2*1024] = float('-inf')
         self.mask = self.mask.to(self.device)
 
         # self.init_weights()
