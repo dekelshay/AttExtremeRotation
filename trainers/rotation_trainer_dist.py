@@ -112,15 +112,15 @@ class Trainer(BaseTrainer):
             # self.transformer_vit_model = VisionTransformer()
 
             # Hyperparameters
-            num_decoder_layers = 2
+            num_decoder_layers = 4#2
             d_model = 128  # Embedding dimension
-            nhead = 2  # Number of attention heads
+            nhead = 4#2  # Number of attention heads
             dim_feedforward = 512
             dropout = 0.1
             # Transformer Decoder Layer
-            decoder_layer0 = TransformerDecoderLayer(d_model, nhead, dim_feedforward, dropout)
-            decoder_layer1 = TransformerDecoderLayer(128, nhead, dim_feedforward, dropout)
-            decoder_layer2 = TransformerDecoderLayer(128, nhead, dim_feedforward, dropout)
+            decoder_layer0 = TransformerDecoderLayer(d_model, nhead, dim_feedforward, dropout, batch_first = True)
+            decoder_layer1 = TransformerDecoderLayer(128, nhead, dim_feedforward, dropout, batch_first = True)
+            decoder_layer2 = TransformerDecoderLayer(128, nhead, dim_feedforward, dropout, batch_first = True)
             # Transformer Decoder
             self.transformer_decoder0 = TransformerDecoder(decoder_layer0, num_decoder_layers).cuda()
             self.transformer_decoder1 = TransformerDecoder(decoder_layer1, num_decoder_layers).cuda()
@@ -130,6 +130,9 @@ class Trainer(BaseTrainer):
 
             # Create an instance of the TwoLayerFC model
             self.TwoLayerFC_model = TwoLayerFC(256, 16, 4).cuda()
+
+            self.linear_tgt = nn.Linear(4, 128).cuda()
+            self.linear_map = nn.Linear(128, 4).cuda()
 
     def positionalencoding2d(self, d_model, height, width):
         """
@@ -231,11 +234,12 @@ class Trainer(BaseTrainer):
 
             ## Distilering
             # Use q as input to decoder1 and trans_output as query
-            self.q = nn.functional.pad(self.q , (trans_output.shape[2]-self.q.shape[2], 0, 0, trans_output.shape[1]-self.q.shape[1], 0, 0))
-            output1_dis = self.transformer_decoder1(trans_output, self.q)
+            #q_pad = nn.functional.pad(self.q , (trans_output.shape[2]-self.q.shape[2], 0, 0, trans_output.shape[1]-self.q.shape[1], 0, 0))
+            q_pad = self.linear_tgt(self.q)
+            output1_dis = self.transformer_decoder1(trans_output, q_pad)
 
             # Use output1 as input to decoder1 and self.q as query
-            output2_dis = self.transformer_decoder2(self.q, output1_dis)
+            output2_dis = self.transformer_decoder2(q_pad, output1_dis)
 
             # trans_output = trans_output[:,:1024,:]
             # trans_output = trans_output[:, :self.cfg.transformer.seq_len, :]
@@ -254,7 +258,9 @@ class Trainer(BaseTrainer):
         # loss type
         if not self.classification:
             # regression loss
-            out_q = self.TwoLayerFC_model(output2_dis)
+            #out_q = self.TwoLayerFC_model(output2_dis)
+            out_q = F.relu(self.linear_map(output2_dis))
+            out_q = out_q.squeeze()
             out_r_mat = compute_rotation_matrix_from_quaternion(out_q)
             res1 = rotation_loss_reg(out_r_mat, gt_rmat)
             loss = res1['loss']
@@ -377,12 +383,13 @@ class Trainer(BaseTrainer):
 
                     ## Distilering
                     # Use q as input to decoder1 and trans_output as query
-                    self.q = nn.functional.pad(self.q, (trans_output.shape[2] - self.q.shape[2], 0, 0, trans_output.shape[1] - self.q.shape[1], 0, 0))
+                    #self.q = nn.functional.pad(self.q, (trans_output.shape[2] - self.q.shape[2], 0, 0, trans_output.shape[1] - self.q.shape[1], 0, 0))
+                    q_pad = self.linear_tgt(self.q)
 
-                    output1_dis = self.transformer_decoder1(trans_output, self.q)
+                    output1_dis = self.transformer_decoder1(trans_output, q_pad)
 
                     # Use output1 as input to decoder1 and self.q as query
-                    output2_dis = self.transformer_decoder2(self.q, output1_dis)
+                    output2_dis = self.transformer_decoder2(q_pad, output1_dis)
 
                     #####
                     # pairwise_feature = torch.cat([image_feature_map1, image_feature_map2], dim=2)
@@ -399,7 +406,9 @@ class Trainer(BaseTrainer):
                     # _, out_rotation_z = self.rotation_net_z(trans_output)
 
                 if not self.classification:
-                    out_q = self.TwoLayerFC_model(output2_dis)
+                    #out_q = self.TwoLayerFC_model(output2_dis)
+                    out_q = F.relu(self.linear_map(output2_dis))
+                    out_q = out_q.squeeze()
                     out_rmat = compute_rotation_matrix_from_quaternion(out_q)
                     # out_rmat, _ = self.rotation_net(output2_dis)
                     out_rmat1 = None
