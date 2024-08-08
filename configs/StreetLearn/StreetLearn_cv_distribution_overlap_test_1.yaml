@@ -43,7 +43,7 @@ trainer:
   classification: False
   opt:
     type: 'adam'
-    lr: 5e-4  #  use default learning rate  (4e-4)
+    lr: 5e-6  #  use default learning rate  (4e-4)
     beta1: 0.9
     beta2: 0.999
     momentum: 0.9  # for SGD
@@ -94,9 +94,9 @@ models:
     out_rotation_mode: 'Quaternion'
 
 transformer:
-  nhead: 2
+  nhead: 4
   d_hid: 768
-  nlayers: 2
+  nlayers: 4
   dropout: 0.1
-  seq_len: 1024
+  seq_len: 2048
 
